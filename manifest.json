@@ -1,0 +1,10 @@
+{
+  "id": "gdrive-sync",
+  "name": "Google Drive Sync",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Bidirectional sync between your vault and a Google Drive folder (supports shared folders).",
+  "author": "andrii",
+  "authorUrl": "",
+  "isDesktopOnly": false
+}

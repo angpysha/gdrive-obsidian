@@ -1,0 +1,47 @@
+/* GDrive Sync plugin styles */
+
+.gdrive-breadcrumbs {
+  padding: 0.5rem 0 0.75rem;
+  font-size: 0.9em;
+  color: var(--text-muted);
+}
+
+.gdrive-crumb {
+  color: var(--text-accent);
+}
+
+.gdrive-folder-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.gdrive-folder-item {
+  padding: 0.5rem 0.25rem;
+  border-radius: 6px;
+  transition: background 0.1s;
+}
+
+.gdrive-folder-item:hover {
+  background: var(--background-modifier-hover);
+}
+
+.gdrive-loading,
+.gdrive-empty {
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0.5rem 0;
+}
+
+/* Status bar states */
+.gdrive-sync-error {
+  color: var(--color-red);
+}
+
+.gdrive-sync-offline {
+  color: var(--color-orange);
+}
+
+.gdrive-sync-syncing {
+  color: var(--color-blue);
+}
