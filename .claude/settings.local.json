@@ -1,9 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(node esbuild.config.mjs production)",
-      "Bash(node pack.mjs)",
-      "Bash(gh auth:*)"
-    ]
-  }
-}
