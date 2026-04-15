@@ -1,4 +1,12 @@
-import type { TokenSet } from "./auth/AuthService";
+// ────────────────────────────────────────────────────
+// Auth types
+// ────────────────────────────────────────────────────
+
+export interface TokenSet {
+  access_token: string;
+  refresh_token: string;
+  expiry_date: number; // ms epoch
+}
 
 // ────────────────────────────────────────────────────
 // Plugin settings (persisted via Obsidian's saveData)

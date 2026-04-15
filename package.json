@@ -1,6 +1,6 @@
 {
   "name": "obsidian-gdrive-sync",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Bidirectional Google Drive sync for Obsidian",
   "main": "main.js",
   "scripts": {

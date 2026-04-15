@@ -35,9 +35,9 @@ export default class GDriveSyncPlugin extends Plugin {
       await this.startSync(false);
     }
 
-    // Mobile: handle OAuth2 redirect via obsidian:// protocol
+    // Handle OAuth2 redirect via obsidian:// protocol (desktop + mobile)
     this.registerObsidianProtocolHandler("gdrive-callback", (params) => {
-      this.auth?.handleMobileCallback(params).catch((err) => {
+      this.auth?.handleCallback(params).catch((err) => {
         new Notice(`Google auth error: ${err}`);
       });
     });

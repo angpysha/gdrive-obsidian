@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <title>GDrive Sync — Connecting…</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: system-ui, -apple-system, sans-serif;
+      background: #1e1e2e;
+      color: #cdd6f4;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .card {
+      background: #313244;
+      border-radius: 16px;
+      padding: 2.5rem 3rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    }
+    .icon { font-size: 3rem; margin-bottom: 1rem; }
+    h1 { font-size: 1.4rem; margin-bottom: .75rem; }
+    p  { color: #a6adc8; line-height: 1.6; font-size: .95rem; }
+    .error { color: #f38ba8; }
+    .btn {
+      display: inline-block;
+      margin-top: 1.5rem;
+      padding: .6rem 1.4rem;
+      background: #7c3aed;
+      color: white;
+      border-radius: 8px;
+      text-decoration: none;
+      font-size: .9rem;
+    }
+  </style>
+</head>
+<body>
+<div class="card" id="card">
+  <div class="icon">⏳</div>
+  <h1>Connecting to Obsidian…</h1>
+  <p>Opening Obsidian to complete authentication. You can close this tab afterwards.</p>
+</div>
+
+<script>
+  const params = new URLSearchParams(window.location.search);
+  const code  = params.get("code");
+  const state = params.get("state");
+  const error = params.get("error");
+  const card  = document.getElementById("card");
+
+  if (error) {
+    card.innerHTML = `
+      <div class="icon">✗</div>
+      <h1 class="error">Authorization failed</h1>
+      <p class="error">${error}</p>
+      <p style="margin-top:.75rem">Close this tab and try again in Obsidian.</p>`;
+  } else if (!code) {
+    card.innerHTML = `
+      <div class="icon">✗</div>
+      <h1 class="error">No authorization code</h1>
+      <p>Something went wrong. Close this tab and try again.</p>`;
+  } else {
+    // Build the obsidian:// deep link and redirect
+    const obsidianParams = new URLSearchParams({ code });
+    if (state) obsidianParams.set("state", state);
+    const deepLink = "obsidian://gdrive-callback?" + obsidianParams.toString();
+
+    window.location.href = deepLink;
+
+    // Fallback UI after 1.5 s in case the redirect didn't open Obsidian
+    setTimeout(() => {
+      card.innerHTML = `
+        <div class="icon">☁</div>
+        <h1>Open Obsidian</h1>
+        <p>If Obsidian didn't open automatically, tap the button below.</p>
+        <a class="btn" href="${deepLink}">Open Obsidian</a>`;
+    }, 1500);
+  }
+</script>
+</body>
+</html>
