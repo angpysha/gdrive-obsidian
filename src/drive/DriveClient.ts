@@ -1,3 +1,4 @@
+import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { AuthService } from "../auth/AuthService";
 import type { DriveChange, DriveFile } from "../types";
 
@@ -79,7 +80,7 @@ export class DriveClient {
   /** Download file content as an ArrayBuffer. */
   async downloadFile(fileId: string): Promise<ArrayBuffer> {
     const resp = await this.fetch(`${API}/files/${fileId}?alt=media`);
-    return resp.arrayBuffer();
+    return await resp.arrayBuffer();
   }
 
   /** Upload a new file. Returns the created DriveFile. */
@@ -105,7 +106,7 @@ export class DriveClient {
       headers: { "Content-Type": "application/json" },
       body,
     });
-    return resp.json();
+    return await resp.json() as DriveFile;
   }
 
   /**
@@ -147,7 +148,7 @@ export class DriveClient {
         body: JSON.stringify({ name: newName }),
       }
     );
-    return resp.json();
+    return await resp.json() as DriveFile;
   }
 
   /** Permanently delete a file. */
@@ -158,7 +159,7 @@ export class DriveClient {
   /** Get file metadata. */
   async getFile(fileId: string): Promise<DriveFile> {
     const resp = await this.fetch(`${API}/files/${fileId}?fields=${FILE_FIELDS}`);
-    return resp.json();
+    return await resp.json() as DriveFile;
   }
 
   // ──────────────────────────────────────
@@ -168,8 +169,8 @@ export class DriveClient {
   /** Get a page token representing "now" — use this on initial connect. */
   async getStartPageToken(): Promise<string> {
     const resp = await this.fetch(`${API}/changes/getStartPageToken`);
-    const data = await resp.json();
-    return data.startPageToken as string;
+    const data = await resp.json() as { startPageToken: string };
+    return data.startPageToken;
   }
 
   /**
@@ -191,14 +192,18 @@ export class DriveClient {
         supportsAllDrives: "true",
       });
       const resp = await this.fetch(`${API}/changes?${params}`);
-      const data = await resp.json();
+      const data = await resp.json() as {
+        changes?: DriveChange[];
+        newStartPageToken?: string;
+        nextPageToken?: string;
+      };
 
       changes.push(...(data.changes ?? []));
 
       if (data.newStartPageToken) {
         return { changes, newPageToken: data.newStartPageToken };
       }
-      token = data.nextPageToken;
+      token = data.nextPageToken!;
     }
   }
 
@@ -220,7 +225,7 @@ export class DriveClient {
         ...(pageToken ? { pageToken } : {}),
       });
       const resp = await this.fetch(`${API}/files?${params}`);
-      const data = await resp.json();
+      const data = await resp.json() as { files?: DriveFile[]; nextPageToken?: string };
       results.push(...(data.files ?? []));
       pageToken = data.nextPageToken;
     } while (pageToken);
@@ -268,9 +273,9 @@ export class DriveClient {
     const resp = await this.fetch(url, {
       method,
       headers: { "Content-Type": `multipart/related; boundary=${boundary}` },
-      body: body.buffer,
+      body: body.buffer as ArrayBuffer,
     });
-    return resp.json();
+    return resp.json() as Promise<DriveFile>;
   }
 
   /** Resumable upload for files > 5 MB. */
@@ -292,37 +297,61 @@ export class DriveClient {
         body: JSON.stringify(metadata),
       }
     );
-    const sessionUri = initResp.headers.get("Location");
+    const sessionUri = initResp.headers.get("location");
     if (!sessionUri) throw new Error("No resumable upload session URI");
 
-    const token = await this.auth.getAccessToken();
-    const resp = await fetch(sessionUri, {
+    const uploadResp = await requestUrl({
+      url: sessionUri,
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${token}`,
+        Authorization: `Bearer ${await this.auth.getAccessToken()}`,
         "Content-Type": mimeType,
         "Content-Length": String(content.byteLength),
       },
       body: content,
+      throw: false,
     });
-    if (!resp.ok) throw new Error(`Resumable upload failed: ${resp.status}`);
-    return resp.json();
+    if (uploadResp.status >= 400)
+      throw new Error(`Resumable upload failed: ${uploadResp.status}`);
+    return uploadResp.json as DriveFile;
   }
 
-  /** Authenticated fetch with automatic token injection. */
-  private async fetch(url: string, init: RequestInit = {}): Promise<Response> {
+  /**
+   * Authenticated request via Obsidian's requestUrl (routes through the main
+   * process — avoids CORS / CSP restrictions that block window.fetch in the
+   * renderer).  Returns a thin wrapper that exposes .json(), .arrayBuffer(),
+   * .text(), and .headers.get() so callers don't need to change.
+   */
+  private async fetch(
+    url: string,
+    init: { method?: string; headers?: Record<string, string>; body?: ArrayBuffer | string } = {}
+  ): Promise<{
+    json(): Promise<unknown>;
+    arrayBuffer(): Promise<ArrayBuffer>;
+    text(): Promise<string>;
+    headers: { get(name: string): string | null };
+  }> {
     const token = await this.auth.getAccessToken();
-    const resp = await fetch(url, {
-      ...init,
-      headers: {
-        ...init.headers,
-        Authorization: `Bearer ${token}`,
-      },
+    const resp: RequestUrlResponse = await requestUrl({
+      url,
+      method: init.method ?? "GET",
+      headers: { ...init.headers, Authorization: `Bearer ${token}` },
+      body: init.body,
+      throw: false,
     });
-    if (!resp.ok) {
-      const body = await resp.text().catch(() => "");
-      throw new Error(`Drive API ${resp.status}: ${body}`);
+
+    if (resp.status >= 400) {
+      throw new Error(`Drive API ${resp.status}: ${resp.text}`);
     }
-    return resp;
+
+    return {
+      json: () => Promise.resolve(resp.json),
+      arrayBuffer: () => Promise.resolve(resp.arrayBuffer),
+      text: () => Promise.resolve(resp.text),
+      headers: {
+        get: (name: string) =>
+          (resp.headers as Record<string, string>)[name.toLowerCase()] ?? null,
+      },
+    };
   }
 }

@@ -15,6 +15,8 @@ export interface TokenSet {
 export interface GDriveSyncSettings {
   /** Google OAuth2 client id (from Cloud Console) */
   clientId: string;
+  /** Google OAuth2 client secret (Web application client type requires this) */
+  clientSecret: string;
   /** Stored OAuth2 tokens */
   tokens: TokenSet | null;
   /** Drive file ID of the selected root folder */
@@ -35,6 +37,7 @@ export interface GDriveSyncSettings {
 
 export const DEFAULT_SETTINGS: GDriveSyncSettings = {
   clientId: "",
+  clientSecret: "",
   tokens: null,
   folderId: "",
   folderName: "",

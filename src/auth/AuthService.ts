@@ -4,9 +4,15 @@
  * PKCE (Proof Key for Code Exchange) eliminates the need for a client secret,
  * making this plugin safe to distribute as a public client.
  *
- * Desktop flow:  loopback HTTP server captures the authorization code.
- * Mobile flow:   obsidian:// URI scheme captures the code directly.
- *                Google allows custom URI schemes for Desktop app client types.
+ * Both desktop and mobile use the same flow:
+ *   1. Open Google consent URL in the system browser.
+ *   2. Google redirects to https://angpysha.github.io/gdrive-obsidian/callback
+ *   3. That page immediately redirects to obsidian://gdrive-callback?code=…
+ *   4. Obsidian's protocol handler fires handleCallback(), resolving the promise.
+ *
+ * iOS note: window.open() is blocked by WKWebView after any await. To avoid
+ * this, call prepareAuthUrl() asynchronously first (e.g. when the settings tab
+ * renders), then call openLogin() synchronously from the button click handler.
  */
 
 import { Platform } from "obsidian";
@@ -16,21 +22,39 @@ export type { TokenSet };
 
 export class AuthService {
   private clientId: string;
+  private clientSecret: string;
   private tokens: TokenSet | null = null;
   private onTokensChanged: (tokens: TokenSet | null) => void;
 
   // Active PKCE verifier (held in memory during the auth flow)
   private codeVerifier: string | null = null;
 
+  // Pre-generated auth URL — set by prepareAuthUrl(), consumed by openLogin()
+  private _prepared: { url: string; verifier: string } | null = null;
+
+  // Pending promise callbacks — resolved by handleCallback()
+  private _pendingResolve?: () => void;
+  private _pendingReject?: (e: Error) => void;
+
   static readonly SCOPES = ["https://www.googleapis.com/auth/drive"];
-  static readonly MOBILE_REDIRECT = "obsidian://gdrive-callback";
+
+  /**
+   * GitHub Pages redirect bridge.
+   * Add this URI as an authorised redirect in your Google Cloud Console
+   * (OAuth client type: Web application).
+   * The page at this URL redirects to obsidian://gdrive-callback?code=…
+   */
+  static readonly REDIRECT_URI =
+    "https://angpysha.github.io/gdrive-obsidian/callback";
 
   constructor(
     clientId: string,
+    clientSecret: string,
     savedTokens: TokenSet | null,
     onTokensChanged: (tokens: TokenSet | null) => void
   ) {
     this.clientId = clientId;
+    this.clientSecret = clientSecret;
     this.tokens = savedTokens;
     this.onTokensChanged = onTokensChanged;
   }
@@ -48,68 +72,92 @@ export class AuthService {
     return this.tokens.access_token;
   }
 
-  /** Trigger the full OAuth2 + PKCE login flow. */
-  async login(): Promise<void> {
-    if (Platform.isMobile) {
-      await this.loginMobile();
-    } else {
-      await this.loginDesktop();
-    }
+  // ──────────────────────────────────────────────────────────────────────────
+  // Login flow
+  // ──────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Pre-generate the PKCE pair and auth URL asynchronously.
+   *
+   * Call this when the settings tab renders (before the user clicks Connect),
+   * so that openLogin() can call window.open() synchronously — avoiding iOS
+   * WKWebView's popup-blocking restriction that fires after any await.
+   */
+  async prepareAuthUrl(): Promise<void> {
+    const { verifier, challenge } = await this.generatePKCE();
+    this._prepared = {
+      url: this.buildAuthUrl(AuthService.REDIRECT_URI, challenge),
+      verifier,
+    };
   }
 
-  // ──────────────────────────────────────
-  // Desktop: loopback server
-  // ──────────────────────────────────────
+  /**
+   * Open the pre-prepared auth URL synchronously and return a promise that
+   * resolves when handleCallback() is called by the protocol handler.
+   *
+   * Must be called from a synchronous button-click handler (no await before
+   * this call) so that iOS allows window.open().
+   */
+  openLogin(): Promise<void> {
+    if (!this._prepared) {
+      return Promise.reject(
+        new Error("Auth URL not prepared. Try again — the page needs a moment to initialise.")
+      );
+    }
 
-  private async loginDesktop(): Promise<void> {
-    const { OAuthServer } = await import("./OAuthServer");
-    const server = new OAuthServer();
-    const { port } = await server.start();
-    const redirectUri = `http://127.0.0.1:${port}/callback`;
-
-    const { verifier, challenge } = await this.generatePKCE();
+    const { url, verifier } = this._prepared;
+    this._prepared = null;
     this.codeVerifier = verifier;
 
-    const authUrl = this.buildAuthUrl(redirectUri, challenge);
-    const { shell } = require("electron") as typeof import("electron");
-    await shell.openExternal(authUrl);
-
-    const code = await server.waitForCode();
-    server.stop();
-
-    await this.exchangeCode(code, redirectUri);
-  }
-
-  // ──────────────────────────────────────
-  // Mobile: obsidian:// URI scheme
-  // ──────────────────────────────────────
-
-  private loginMobile(): Promise<void> {
-    return new Promise(async (resolve, reject) => {
-      const { verifier, challenge } = await this.generatePKCE();
-      this.codeVerifier = verifier;
-
-      const authUrl = this.buildAuthUrl(AuthService.MOBILE_REDIRECT, challenge);
-      window.open(authUrl);
+    return new Promise((resolve, reject) => {
+      // Open synchronously — no await before this point.
+      if (!Platform.isMobile) {
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-var-requires
+          const electron = require("electron") as { shell: { openExternal(url: string): void } };
+          electron.shell.openExternal(url);
+        } catch {
+          window.open(url);
+        }
+      } else {
+        window.open(url);
+      }
 
       this._pendingResolve = resolve;
       this._pendingReject = reject;
-      setTimeout(() => reject(new Error("OAuth timeout — try again")), 5 * 60 * 1000);
+      setTimeout(
+        () => reject(new Error("OAuth timeout — please try again")),
+        5 * 60_000
+      );
     });
   }
 
-  private _pendingResolve?: () => void;
-  private _pendingReject?: (e: Error) => void;
+  /**
+   * Convenience wrapper used when a fresh login is triggered without a
+   * pre-prepared URL (e.g. from a command or programmatic call).
+   * On iOS this will still work but may fail if called from an async context —
+   * prefer prepareAuthUrl() + openLogin() for the settings UI button.
+   */
+  async login(): Promise<void> {
+    if (!this._prepared) {
+      await this.prepareAuthUrl();
+    }
+    return this.openLogin();
+  }
+
+  // ──────────────────────────────────────────────────────────────────────────
+  // OAuth callback
+  // ──────────────────────────────────────────────────────────────────────────
 
   /**
-   * Called by main.ts registerObsidianProtocolHandler("gdrive-callback", ...)
-   * on both desktop (if using URI scheme) and mobile.
+   * Called by main.ts registerObsidianProtocolHandler("gdrive-callback", …)
+   * on both desktop and mobile.
    */
   async handleCallback(params: Record<string, string>): Promise<void> {
     try {
       if (params.error) throw new Error(params.error);
       if (!params.code) throw new Error("No authorization code received");
-      await this.exchangeCode(params.code, AuthService.MOBILE_REDIRECT);
+      await this.exchangeCode(params.code, AuthService.REDIRECT_URI);
       this._pendingResolve?.();
     } catch (e) {
       this._pendingReject?.(e as Error);
@@ -119,9 +167,14 @@ export class AuthService {
     }
   }
 
+  // ──────────────────────────────────────────────────────────────────────────
+  // Token exchange & refresh
+  // ──────────────────────────────────────────────────────────────────────────
+
   /** Exchange an authorization code for tokens (PKCE — no client secret). */
   async exchangeCode(code: string, redirectUri: string): Promise<void> {
-    if (!this.codeVerifier) throw new Error("No PKCE verifier — restart the login flow");
+    if (!this.codeVerifier)
+      throw new Error("No PKCE verifier — restart the login flow");
 
     const resp = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
@@ -129,6 +182,7 @@ export class AuthService {
       body: new URLSearchParams({
         code,
         client_id: this.clientId,
+        client_secret: this.clientSecret,
         redirect_uri: redirectUri,
         grant_type: "authorization_code",
         code_verifier: this.codeVerifier,
@@ -157,13 +211,16 @@ export class AuthService {
     this.onTokensChanged(null);
   }
 
-  // ──────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
   // PKCE helpers
-  // ──────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
 
   private async generatePKCE(): Promise<{ verifier: string; challenge: string }> {
     const verifier = this.base64url(crypto.getRandomValues(new Uint8Array(64)));
-    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(verifier));
+    const digest = await crypto.subtle.digest(
+      "SHA-256",
+      new TextEncoder().encode(verifier)
+    );
     const challenge = this.base64url(new Uint8Array(digest));
     return { verifier, challenge };
   }
@@ -189,9 +246,9 @@ export class AuthService {
     return `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
   }
 
-  // ──────────────────────────────────────
-  // Token refresh (no client secret needed for PKCE)
-  // ──────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────────────────
+  // Token refresh (PKCE — no client secret needed)
+  // ──────────────────────────────────────────────────────────────────────────
 
   private async refresh(): Promise<void> {
     if (!this.tokens?.refresh_token) throw new Error("No refresh token");
@@ -202,6 +259,7 @@ export class AuthService {
       body: new URLSearchParams({
         refresh_token: this.tokens.refresh_token,
         client_id: this.clientId,
+        client_secret: this.clientSecret,
         grant_type: "refresh_token",
       }).toString(),
     });
@@ -219,8 +277,10 @@ export class AuthService {
   private setTokens(raw: Record<string, unknown>): void {
     this.tokens = {
       access_token: raw.access_token as string,
-      refresh_token: (raw.refresh_token as string) ?? this.tokens?.refresh_token ?? "",
-      expiry_date: Date.now() + ((raw.expires_in as number) ?? 3600) * 1000,
+      refresh_token:
+        (raw.refresh_token as string) ?? this.tokens?.refresh_token ?? "",
+      expiry_date:
+        Date.now() + ((raw.expires_in as number) ?? 3600) * 1000,
     };
     this.onTokensChanged(this.tokens);
   }
