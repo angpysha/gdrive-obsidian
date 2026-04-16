@@ -15,7 +15,7 @@ export class SettingsTab extends PluginSettingTab {
     // ── OAuth credentials ──────────────────────────────────────────────────
     containerEl.createEl("h3", { text: "Google Cloud credentials" });
     containerEl.createEl("p", {
-      text: "Create an OAuth 2.0 Client ID in Google Cloud Console (type: Desktop app), then paste the values below.",
+      text: "Create an OAuth 2.0 Client ID in Google Cloud Console (type: Desktop app) and paste it below. No client secret required.",
       cls: "setting-item-description",
     });
 
@@ -27,18 +27,6 @@ export class SettingsTab extends PluginSettingTab {
           .setValue(plugin.settings.clientId)
           .onChange(async (v) => {
             plugin.settings.clientId = v.trim();
-            await plugin.saveSettings();
-          })
-      );
-
-    new Setting(containerEl)
-      .setName("Client Secret")
-      .addText((text) =>
-        text
-          .setPlaceholder("GOCSPX-…")
-          .setValue(plugin.settings.clientSecret)
-          .onChange(async (v) => {
-            plugin.settings.clientSecret = v.trim();
             await plugin.saveSettings();
           })
       );
@@ -66,8 +54,8 @@ export class SettingsTab extends PluginSettingTab {
             .setButtonText("Connect Google Account")
             .setCta()
             .onClick(async () => {
-              if (!plugin.settings.clientId || !plugin.settings.clientSecret) {
-                new Notice("Please enter your Client ID and Client Secret first.");
+              if (!plugin.settings.clientId) {
+                new Notice("Please enter your Client ID first.");
                 return;
               }
               try {

@@ -64,18 +64,13 @@ Each user needs their own free Google Cloud credentials. This takes about 5 minu
 
 1. Go to **APIs & Services → Credentials**
 2. Click **+ Create Credentials → OAuth client ID**
-3. Application type: **Web application**
-4. Name: anything (e.g. `Obsidian Plugin`)
-5. Under **Authorized redirect URIs** click **+ Add URI** and enter:
-   ```
-   https://angpysha.github.io/gdrive-obsidian/callback
-   ```
-6. Click **Create**
-7. Copy the **Client ID** and **Client Secret** shown in the dialog
+3. Application type: **Desktop app**
+4. Name: anything (e.g. `Obsidian Plugin`) → **Create**
+5. Copy the **Client ID** shown in the dialog (no client secret needed)
 
 ### Step 5 — Connect in Obsidian
 
-1. Open plugin settings → paste your **Client ID** and **Client Secret**
+1. Open plugin settings → paste your **Client ID**
 2. Click **Connect Google Account** → your browser opens Google sign-in
 3. Sign in with your Google account → **Allow**
 4. Obsidian reopens automatically and shows "Connected"

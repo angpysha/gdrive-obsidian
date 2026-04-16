@@ -72,7 +72,6 @@ export default class GDriveSyncPlugin extends Plugin {
   initAuth(): void {
     this.auth = new AuthService(
       this.settings.clientId,
-      this.settings.clientSecret,
       this.settings.tokens,
       async (tokens) => {
         this.settings.tokens = tokens;
