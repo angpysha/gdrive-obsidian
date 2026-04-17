@@ -15,7 +15,7 @@
  * renders), then call openLogin() synchronously from the button click handler.
  */
 
-import { Platform } from "obsidian";
+import { Platform, requestUrl } from "obsidian";
 import type { TokenSet } from "../types";
 
 export type { TokenSet };
@@ -171,41 +171,45 @@ export class AuthService {
   // Token exchange & refresh
   // ──────────────────────────────────────────────────────────────────────────
 
-  /** Exchange an authorization code for tokens (PKCE — no client secret). */
+  /** Exchange an authorization code for tokens. */
   async exchangeCode(code: string, redirectUri: string): Promise<void> {
     if (!this.codeVerifier)
       throw new Error("No PKCE verifier — restart the login flow");
 
-    const resp = await fetch("https://oauth2.googleapis.com/token", {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({
-        code,
-        client_id: this.clientId,
-        client_secret: this.clientSecret,
-        redirect_uri: redirectUri,
-        grant_type: "authorization_code",
-        code_verifier: this.codeVerifier,
-      }).toString(),
-    });
+    const body = new URLSearchParams({
+      code,
+      client_id: this.clientId,
+      client_secret: this.clientSecret,
+      redirect_uri: redirectUri,
+      grant_type: "authorization_code",
+      code_verifier: this.codeVerifier,
+    }).toString();
 
     this.codeVerifier = null;
 
-    if (!resp.ok) {
-      const err = await resp.text();
-      throw new Error(`Token exchange failed: ${err}`);
+    const resp = await requestUrl({
+      url: "https://oauth2.googleapis.com/token",
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
+      throw: false,
+    });
+
+    if (resp.status >= 400) {
+      throw new Error(`Token exchange failed: ${resp.text}`);
     }
 
-    this.setTokens(await resp.json());
+    this.setTokens(resp.json);
   }
 
   /** Revoke tokens and clear stored state. */
   async logout(): Promise<void> {
     if (this.tokens?.access_token) {
-      fetch(
-        `https://oauth2.googleapis.com/revoke?token=${this.tokens.access_token}`,
-        { method: "POST" }
-      ).catch(() => {});
+      requestUrl({
+        url: `https://oauth2.googleapis.com/revoke?token=${this.tokens.access_token}`,
+        method: "POST",
+        throw: false,
+      }).catch(() => {});
     }
     this.tokens = null;
     this.onTokensChanged(null);
@@ -253,7 +257,8 @@ export class AuthService {
   private async refresh(): Promise<void> {
     if (!this.tokens?.refresh_token) throw new Error("No refresh token");
 
-    const resp = await fetch("https://oauth2.googleapis.com/token", {
+    const resp = await requestUrl({
+      url: "https://oauth2.googleapis.com/token",
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
@@ -262,16 +267,16 @@ export class AuthService {
         client_secret: this.clientSecret,
         grant_type: "refresh_token",
       }).toString(),
+      throw: false,
     });
 
-    if (!resp.ok) {
+    if (resp.status >= 400) {
       this.tokens = null;
       this.onTokensChanged(null);
       throw new Error("Token refresh failed — please reconnect your account");
     }
 
-    const data = await resp.json();
-    this.setTokens({ refresh_token: this.tokens.refresh_token, ...data });
+    this.setTokens({ refresh_token: this.tokens.refresh_token, ...resp.json });
   }
 
   private setTokens(raw: Record<string, unknown>): void {
