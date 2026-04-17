@@ -66,6 +66,12 @@ export class AuthService {
   /** Returns a valid access token, refreshing silently if near expiry. */
   async getAccessToken(): Promise<string> {
     if (!this.tokens) throw new Error("Not authenticated");
+    if (!this.tokens.access_token) {
+      // Stored token is corrupt — clear it so the UI shows "Not connected"
+      this.tokens = null;
+      this.onTokensChanged(null);
+      throw new Error("Stored token is invalid — please reconnect your account");
+    }
     if (Date.now() >= this.tokens.expiry_date - 60_000) {
       await this.refresh();
     }
