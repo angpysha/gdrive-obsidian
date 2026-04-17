@@ -169,7 +169,7 @@ export class DriveClient {
 
   /** Get a page token representing "now" — use this on initial connect. */
   async getStartPageToken(): Promise<string> {
-    const resp = await this.fetch(`${API}/changes/getStartPageToken`);
+    const resp = await this.fetch(`${API}/changes/startPageToken`);
     const data = await resp.json() as { startPageToken: string };
     return data.startPageToken;
   }
@@ -301,11 +301,12 @@ export class DriveClient {
     const sessionUri = initResp.headers.get("location");
     if (!sessionUri) throw new Error("No resumable upload session URI");
 
+    const uploadToken = await this.auth.getAccessToken();
     const uploadResp = await requestUrl({
       url: sessionUri,
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${await this.auth.getAccessToken()}`,
+        "Authorization": `Bearer ${uploadToken}`,
         "Content-Type": mimeType,
         "Content-Length": String(content.byteLength),
       },
@@ -334,13 +335,18 @@ export class DriveClient {
   }> {
     const token = await this.auth.getAccessToken();
     const method = init.method ?? "GET";
-    const shortUrl = url.replace("https://www.googleapis.com", "").replace("https://www.googleapis.com/upload", "");
-    log("info", `Drive ${method} ${shortUrl} | sending Authorization: Bearer ${token.substring(0, 12)}…`);
+    const shortUrl = url.replace("https://www.googleapis.com", "");
+
+    log("info", `Drive ${method} ${shortUrl} | token=${token.substring(0, 12)}…`);
+
     const resp: RequestUrlResponse = await requestUrl({
       url,
       method,
-      headers: { ...init.headers, Authorization: `Bearer ${token}` },
-      body: init.body,
+      headers: {
+        "Authorization": `Bearer ${token}`,
+        ...(init.headers ?? {}),
+      },
+      ...(init.body !== undefined ? { body: init.body } : {}),
       throw: false,
     });
 
