@@ -1,4 +1,5 @@
 import type { App } from "obsidian";
+import { log } from "../util/Logger";
 import type { DriveClient } from "../drive/DriveClient";
 import type { StateStore } from "../store/StateStore";
 import { ChangeQueue, type ChangeOp } from "./ChangeQueue";
@@ -62,6 +63,7 @@ export class SyncEngine {
   // ──────────────────────────────────────
 
   async initialSync(): Promise<void> {
+    log("info", "initialSync: starting");
     this.setStatus("syncing");
     try {
       const rootFolderId = this.settings.folderId;
@@ -153,8 +155,10 @@ export class SyncEngine {
       }
 
       await this.store.save();
+      log("info", "initialSync: complete");
       this.setStatus("idle");
     } catch (err) {
+      log("error", `initialSync: failed — ${err}`);
       this.setStatus("error", String(err));
       throw err;
     }

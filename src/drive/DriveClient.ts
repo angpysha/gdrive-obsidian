@@ -1,5 +1,6 @@
 import { requestUrl, type RequestUrlResponse } from "obsidian";
 import type { AuthService } from "../auth/AuthService";
+import { log } from "../util/Logger";
 import type { DriveChange, DriveFile } from "../types";
 
 const API = "https://www.googleapis.com/drive/v3";
@@ -332,14 +333,17 @@ export class DriveClient {
     headers: { get(name: string): string | null };
   }> {
     const token = await this.auth.getAccessToken();
+    const method = init.method ?? "GET";
+    log("info", `Drive ${method} ${url.replace("https://www.googleapis.com", "")}`);
     const resp: RequestUrlResponse = await requestUrl({
       url,
-      method: init.method ?? "GET",
+      method,
       headers: { ...init.headers, Authorization: `Bearer ${token}` },
       body: init.body,
       throw: false,
     });
 
+    log(resp.status >= 400 ? "error" : "info", `Drive response: ${resp.status}`);
     if (resp.status >= 400) {
       throw new Error(`Drive API ${resp.status}: ${resp.text}`);
     }

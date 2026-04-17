@@ -1,6 +1,7 @@
 import { App, Platform, PluginSettingTab, Setting, Notice } from "obsidian";
 import type GDriveSyncPlugin from "../main";
 import { FolderPickerModal } from "./FolderPickerModal";
+import { getLogs, clearLogs, formatLogs } from "../util/Logger";
 
 export class SettingsTab extends PluginSettingTab {
   constructor(app: App, private plugin: GDriveSyncPlugin) {
@@ -242,5 +243,65 @@ export class SettingsTab extends PluginSettingTab {
           }
         })
       );
+
+    // ── Logs ───────────────────────────────────────────────────────────────
+    containerEl.createEl("h3", { text: "Logs" });
+
+    const logControls = new Setting(containerEl)
+      .setName("Debug log")
+      .setDesc(`${getLogs().length} entries`);
+
+    logControls.addButton((btn) =>
+      btn.setButtonText("Copy").onClick(() => {
+        navigator.clipboard.writeText(formatLogs()).then(() => {
+          new Notice("Logs copied to clipboard.");
+        });
+      })
+    );
+
+    logControls.addButton((btn) =>
+      btn.setButtonText("Clear").onClick(() => {
+        clearLogs();
+        this.display();
+      })
+    );
+
+    logControls.addButton((btn) =>
+      btn.setButtonText("Refresh").onClick(() => this.display())
+    );
+
+    const logBox = containerEl.createEl("pre", {});
+    Object.assign(logBox.style, {
+      fontFamily: "monospace",
+      fontSize: "11px",
+      lineHeight: "1.5",
+      background: "var(--background-secondary)",
+      padding: "8px",
+      borderRadius: "6px",
+      maxHeight: "260px",
+      overflowY: "auto",
+      whiteSpace: "pre-wrap",
+      wordBreak: "break-all",
+      userSelect: "text",
+    });
+
+    const entries = getLogs();
+    if (entries.length === 0) {
+      logBox.textContent = "(no logs yet — trigger a sync to see activity)";
+      logBox.style.color = "var(--text-muted)";
+    } else {
+      // Colour-code by level
+      for (const e of entries) {
+        const d = new Date(e.ts);
+        const t = `${d.getHours().toString().padStart(2, "0")}:${d.getMinutes().toString().padStart(2, "0")}:${d.getSeconds().toString().padStart(2, "0")}.${d.getMilliseconds().toString().padStart(3, "0")}`;
+        const line = containerEl.doc.createElement("span");
+        line.textContent = `[${t}] ${e.level.toUpperCase().padEnd(5)} ${e.msg}\n`;
+        if (e.level === "error") line.style.color = "var(--text-error)";
+        else if (e.level === "warn") line.style.color = "var(--text-warning, #e5a50a)";
+        logBox.appendChild(line);
+      }
+      // Scroll to bottom
+      requestAnimationFrame(() => { logBox.scrollTop = logBox.scrollHeight; });
+    }
   }
 }

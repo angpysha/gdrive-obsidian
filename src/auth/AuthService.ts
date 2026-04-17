@@ -16,6 +16,7 @@
  */
 
 import { Platform, requestUrl } from "obsidian";
+import { log } from "../util/Logger";
 import type { TokenSet } from "../types";
 
 export type { TokenSet };
@@ -67,12 +68,12 @@ export class AuthService {
   async getAccessToken(): Promise<string> {
     if (!this.tokens) throw new Error("Not authenticated");
     if (!this.tokens.access_token) {
-      // Stored token is corrupt — clear it so the UI shows "Not connected"
       this.tokens = null;
       this.onTokensChanged(null);
       throw new Error("Stored token is invalid — please reconnect your account");
     }
     if (Date.now() >= this.tokens.expiry_date - 60_000) {
+      log("info", "Access token expiring — refreshing");
       await this.refresh();
     }
     return this.tokens.access_token;
@@ -111,6 +112,7 @@ export class AuthService {
       );
     }
 
+    log("info", `openLogin: opening browser (mobile=${Platform.isMobile})`);
     const { url, verifier } = this._prepared;
     this._prepared = null;
     this.codeVerifier = verifier;
@@ -160,12 +162,15 @@ export class AuthService {
    * on both desktop and mobile.
    */
   async handleCallback(params: Record<string, string>): Promise<void> {
+    log("info", `handleCallback: code=${params.code ? "present" : "missing"} error=${params.error ?? "none"}`);
     try {
       if (params.error) throw new Error(params.error);
       if (!params.code) throw new Error("No authorization code received");
       await this.exchangeCode(params.code, AuthService.REDIRECT_URI);
+      log("info", "handleCallback: token exchange succeeded");
       this._pendingResolve?.();
     } catch (e) {
+      log("error", `handleCallback: failed — ${e}`);
       this._pendingReject?.(e as Error);
     } finally {
       this._pendingResolve = undefined;
@@ -193,6 +198,7 @@ export class AuthService {
 
     this.codeVerifier = null;
 
+    log("info", "exchangeCode: calling oauth2.googleapis.com/token");
     const resp = await requestUrl({
       url: "https://oauth2.googleapis.com/token",
       method: "POST",
@@ -201,11 +207,14 @@ export class AuthService {
       throw: false,
     });
 
+    log("info", `exchangeCode: response status=${resp.status}`);
     if (resp.status >= 400) {
       throw new Error(`Token exchange failed: ${resp.text}`);
     }
 
-    this.setTokens(resp.json);
+    const json = resp.json as Record<string, unknown>;
+    log("info", `exchangeCode: got access_token=${json.access_token ? "yes" : "MISSING"} refresh_token=${json.refresh_token ? "yes" : "MISSING"}`);
+    this.setTokens(json);
   }
 
   /** Revoke tokens and clear stored state. */
