@@ -72,8 +72,11 @@ export class AuthService {
       this.onTokensChanged(null);
       throw new Error("Stored token is invalid — please reconnect your account");
     }
+    const tok = this.tokens.access_token;
+    const expiresIn = Math.round((this.tokens.expiry_date - Date.now()) / 1000);
+    log("info", `getAccessToken: token=${tok.substring(0, 12)}… expiresIn=${expiresIn}s`);
     if (Date.now() >= this.tokens.expiry_date - 60_000) {
-      log("info", "Access token expiring — refreshing");
+      log("info", "getAccessToken: refreshing (near expiry)");
       await this.refresh();
     }
     return this.tokens.access_token;
@@ -302,6 +305,7 @@ export class AuthService {
       expiry_date:
         Date.now() + ((raw.expires_in as number) ?? 3600) * 1000,
     };
+    log("info", `setTokens: access_token=${this.tokens.access_token ? this.tokens.access_token.substring(0, 12) + "…" : "MISSING"} refresh_token=${this.tokens.refresh_token ? "present" : "MISSING"} expires_in=${raw.expires_in ?? "?"}`);
     this.onTokensChanged(this.tokens);
   }
 }

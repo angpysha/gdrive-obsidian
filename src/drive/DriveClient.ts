@@ -334,7 +334,8 @@ export class DriveClient {
   }> {
     const token = await this.auth.getAccessToken();
     const method = init.method ?? "GET";
-    log("info", `Drive ${method} ${url.replace("https://www.googleapis.com", "")}`);
+    const shortUrl = url.replace("https://www.googleapis.com", "").replace("https://www.googleapis.com/upload", "");
+    log("info", `Drive ${method} ${shortUrl} | sending Authorization: Bearer ${token.substring(0, 12)}…`);
     const resp: RequestUrlResponse = await requestUrl({
       url,
       method,
@@ -343,7 +344,7 @@ export class DriveClient {
       throw: false,
     });
 
-    log(resp.status >= 400 ? "error" : "info", `Drive response: ${resp.status}`);
+    log(resp.status >= 400 ? "error" : "info", `Drive response: ${resp.status} for ${shortUrl}`);
     if (resp.status >= 400) {
       throw new Error(`Drive API ${resp.status}: ${resp.text}`);
     }
